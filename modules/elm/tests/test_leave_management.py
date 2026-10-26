@@ -177,3 +177,44 @@ def test_substitute_decline_and_replace_flow():
     leave.refresh_from_db()
     assert leave.status == "pending_unit_head"
 
+
+@pytest.mark.django_db
+def test_pending_leave_reserves_balance():
+    unit = OrganizationUnit.objects.create(code="IT", name="IT", unit_head_user_id=20)
+    EmployeeProfile.objects.create(user_id=10, employee_type="staff", organization_unit=unit)
+    applicant = Actor(10, "elm.leave.apply")
+
+    # First request consumes 6 days of CL (out of 8.00)
+    service.apply_for_leave(applicant, {
+        "category": "CL", "start_date": date(2026, 11, 2),
+        "end_date": date(2026, 11, 9), "purpose": "First request",
+    })
+
+    # Second request for 4 days should fail because only 2 days remain available
+    with pytest.raises(ConflictError, match="Insufficient CL balance"):
+        service.apply_for_leave(applicant, {
+            "category": "CL", "start_date": date(2026, 11, 16),
+            "end_date": date(2026, 11, 19), "purpose": "Second request",
+        })
+
+
+@pytest.mark.django_db
+def test_cl_cannot_be_combined_with_other_leaves():
+    unit = OrganizationUnit.objects.create(code="IT", name="IT", unit_head_user_id=20)
+    EmployeeProfile.objects.create(user_id=10, employee_type="staff", organization_unit=unit)
+    applicant = Actor(10, "elm.leave.apply")
+
+    # Apply for CL on Friday Oct 16
+    service.apply_for_leave(applicant, {
+        "category": "CL", "start_date": date(2026, 10, 16),
+        "end_date": date(2026, 10, 16), "purpose": "Friday CL",
+    })
+
+    # Applying for adjacent EL starting Saturday Oct 17 should be blocked
+    with pytest.raises(ConflictError, match="Cannot combine this leave category with adjacent Casual Leave"):
+        service.apply_for_leave(applicant, {
+            "category": "EL", "start_date": date(2026, 10, 17),
+            "end_date": date(2026, 10, 20), "purpose": "Adjacent EL",
+        })
+
+

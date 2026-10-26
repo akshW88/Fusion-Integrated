@@ -101,7 +101,7 @@ def _account(user_id: int, category: str, year: int,
             prior = LeaveAccount.objects.filter(
                 user_id=user_id, category=category, year=year - 1).first()
             if prior:
-                opening = prior.balance
+                opening = max(ZERO, prior.balance)
         annual_credit = policy.annual_entitlement
         if policy.faculty_only and employee_type != "faculty":
             annual_credit = ZERO
@@ -334,16 +334,44 @@ def _validate_period(category: str, start: date, end: date, half_day: str,
         raise ConflictError(
             "The requested dates overlap another approved leave extension.",
             code="leave_overlap")
+    # Enforce Business Rule: Casual Leave cannot be combined in continuation with other leave types
+    if category == "CL":
+        adjacent = LeaveRequest.objects.filter(
+            applicant_user_id=user_id, status__in=ACTIVE_STATUSES,
+        ).exclude(category__in={"CL", "RH"}).filter(
+            Q(end_date=start - timedelta(days=1)) | Q(start_date=end + timedelta(days=1))
+        )
+        if exclude_request_id:
+            adjacent = adjacent.exclude(pk=exclude_request_id)
+        if adjacent.exists():
+            raise ConflictError(
+                "Casual Leave (CL) cannot be combined in continuation with other leave categories.",
+                code="invalid_leave_combination")
+    elif category not in {"CL", "RH"}:
+        adjacent = LeaveRequest.objects.filter(
+            applicant_user_id=user_id, category="CL", status__in=ACTIVE_STATUSES,
+        ).filter(
+            Q(end_date=start - timedelta(days=1)) | Q(start_date=end + timedelta(days=1))
+        )
+        if exclude_request_id:
+            adjacent = adjacent.exclude(pk=exclude_request_id)
+        if adjacent.exists():
+            raise ConflictError(
+                "Cannot combine this leave category with adjacent Casual Leave (CL).",
+                code="invalid_leave_combination")
+
     amounts = _days_by_year(category, start, end, half_day)
     if not amounts or any(amount <= ZERO for amount in amounts.values()):
         raise ConflictError("The selected period contains no chargeable leave days.",
                             code="no_chargeable_leave_days")
     for year, amount in amounts.items():
         account = _account(user_id, category, year, employee_type)
-        if account.balance < amount:
+        available = account.balance - _reserved_days(
+            user_id, category, year, exclude_request_id)
+        if available < amount:
             raise ConflictError(
                 f"Insufficient {category} balance for {year}; "
-                f"{amount} day(s) requested, {account.balance} available.",
+                f"{amount} day(s) requested, {available} available after pending requests.",
                 code="insufficient_leave_balance")
     return amounts
 
