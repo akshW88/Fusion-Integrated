@@ -137,7 +137,7 @@ def _charge(user_id: int, employee_type: str, category: str,
     for year, amount in amounts.items():
         account = _account(user_id, category, year, employee_type)
         available = account.balance - _reserved_days(
-            user_id, category, year, exclude_request_id)
+            user_id, category, year, request.id)
         if available < amount:
             raise ConflictError(
                 f"Insufficient {category} balance for {year}; "
