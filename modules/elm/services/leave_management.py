@@ -526,7 +526,7 @@ def decide_leave(actor, leave: LeaveRequest, action: str, note: str = "") -> Lea
         if action == "accept":
             _assign_unit_head(leave, profile)
         else:
-            leave.status = "pending_unit_head"
+            leave.status = "awaiting_substitute"
             leave.workflow_stage = "applicant_action_required"
             leave.assigned_user_id = leave.applicant_user_id
             leave.assigned_permission = "elm.leave.apply"

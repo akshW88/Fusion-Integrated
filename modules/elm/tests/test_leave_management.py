@@ -139,3 +139,41 @@ def test_year_end_converts_fractional_faculty_vl_without_carrying_vl():
     assert vl.year_end_processed is True
     assert next_vl.credited == Decimal("60.00")
     assert next_el.credited == Decimal("2.75")
+
+
+@pytest.mark.django_db
+def test_substitute_decline_and_replace_flow():
+    unit = OrganizationUnit.objects.create(code="IT", name="IT", unit_head_user_id=20)
+    EmployeeProfile.objects.create(user_id=10, employee_type="staff", organization_unit=unit)
+    EmployeeProfile.objects.create(user_id=15, employee_type="staff", organization_unit=unit)
+    EmployeeProfile.objects.create(user_id=16, employee_type="staff", organization_unit=unit)
+
+    applicant = Actor(10, "elm.leave.apply")
+    sub1 = Actor(15, "elm.leave.substitute_respond")
+    sub2 = Actor(16, "elm.leave.substitute_respond")
+
+    leave = service.apply_for_leave(applicant, {
+        "category": "CL", "start_date": date(2026, 10, 13),
+        "end_date": date(2026, 10, 13), "purpose": "Personal",
+        "substitute_user_id": 15,
+    })
+    assert leave.status == "awaiting_substitute"
+    assert leave.workflow_stage == "substitute"
+
+    service.decide_leave(sub1, leave, "decline", "Busy with duties")
+    leave.refresh_from_db()
+    assert leave.status == "awaiting_substitute"
+    assert leave.workflow_stage == "applicant_action_required"
+    assert leave.substitute_response == "declined"
+
+    service.replace_substitute(applicant, leave, 16)
+    leave.refresh_from_db()
+    assert leave.status == "awaiting_substitute"
+    assert leave.substitute_user_id == 16
+    assert leave.substitute_response == "pending"
+    assert leave.workflow_stage == "substitute"
+
+    service.decide_leave(sub2, leave, "accept", "Will cover")
+    leave.refresh_from_db()
+    assert leave.status == "pending_unit_head"
+

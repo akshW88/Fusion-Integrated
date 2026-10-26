@@ -166,7 +166,7 @@ class LeaveRequest(TimeStampedModel):
                                 ("declined", "Declined")],
         blank=True)
     status = models.CharField(max_length=32, choices=STATUSES, db_index=True)
-    workflow_stage = models.CharField(max_length=24, blank=True)
+    workflow_stage = models.CharField(max_length=32, blank=True)
     assigned_user_id = models.IntegerField(null=True, blank=True)
     assigned_permission = models.CharField(max_length=100, blank=True)
     assigned_role = models.CharField(max_length=100, blank=True)
